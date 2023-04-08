@@ -11,8 +11,193 @@ spark = SparkSession.builder.master("local[*]")\
     .enableHiveSupport()\
     .getOrCreate()
 
-# Criando dataframes diretamente do Hive
-df_clientes = spark.sql("SELECT * FROM DESAFIO_CURSO.TBL_CLIENTES")
+# Parâmetro para salvar as minhas tabelas no Hive e mandar para as pastas corretas.
+def salvar_df(df, file):
+    output = "/input/gold/" + file
+    erase = "hdfs dfs -rm " + output + "/*"
+    rename = "hdfs dfs -get /datalake/gold/"+file+"/part-* /input/gold/"+file+".csv"
+    print(rename)
+    
+    
+    df.coalesce(1).write\
+        .format("csv")\
+        .option("header", True)\
+        .option("delimiter", ";")\
+        .mode("overwrite")\
+        .save("/datalake/gold/"+file+"/")
+
+    os.system(erase)
+    os.system(rename)
+
+
+    # Criando os meus dataframes através da importação do Hive.
+df_CLIENTES = spark.sql("select * from desafio_curso.tbl_clientes")
+df_DIVISAO = spark.sql("select * from desafio_curso.tbl_divisao")
+df_ENDERECO = spark.sql("select * from desafio_curso.tbl_endereco")
+df_REGIAO = spark.sql("select * from desafio_curso.tbl_regiao")
+df_VENDAS = spark.sql("select * from desafio_curso.tbl_vendas")
+
+# Excluindo a linha duplicada que veio de cada tabela.
+df_CLIENTES = df_CLIENTES.subtract(df_CLIENTES.limit(1))
+df_DIVISAO = df_DIVISAO.subtract(df_DIVISAO.limit(1))
+df_ENDERECO = df_ENDERECO.subtract(df_ENDERECO.limit(1))
+df_REGIAO = df_REGIAO.subtract(df_REGIAO.limit(1))
+df_VENDAS = df_VENDAS.subtract(df_VENDAS.limit(1))
+
+# Juntando a tabela de Vendas com a Clientes através do Inner Join, para assim contruir a minha Stage.
+df_relacional = df_VENDAS.join(df_CLIENTES,df_VENDAS.customer_key == df_CLIENTES.customer_key, "inner").drop(df_CLIENTES.customer_key)
+
+#Mostrando o resultado dessa junção.
+df_relacional.show(10)
++--------------------+------------+----------+---------------+------------+--------------+----------+-----------+--------------------+-----------+----------+------------+----------------------+------------+--------------------------------+-----------------+-------------------+-----------+--------------+---------+---+--------------+---------------+-------------+-------------------+-------------+--------+----------------+------------+-----------+------------------+-----------+
+|actual_delivery_date|customer_key|  date_key|discount_amount|invoice_date|invoice_number|item_class|item_number|                item|line_number|list_price|order_number|promised_delivery_date|sales_amount|sales_amount_based_on_list_price|sales_cost_amount|sales_margin_amount|sales_price|sales_quantity|sales_rep|u_m|address_number|business_family|business_unit|           customer|customer_type|division|line_of_business|       phone|region_code|regional_sales_mgr|search_type|
++--------------------+------------+----------+---------------+------------+--------------+----------+-----------+--------------------+-----------+----------+------------+----------------------+------------+--------------------------------+-----------------+-------------------+-----------+--------------+---------+---+--------------+---------------+-------------+-------------------+-------------+--------+----------------+------------+-----------+------------------+-----------+
+|          27/10/2019|    10014495|26/10/2018|         915,99|  28/10/2018|        117050|       P01|      17801|Better Fancy Cann...|       1000|   1431,23|      213985|            27/10/2019|      515,24|                         1431,23|                0|             515,24|     515,24|             1|      161| EA|      10014495|             R3|            1|Harvard Supermarket|           G2|       2|                |816-455-8733|          1|               S16|          C|
+|          18/10/2019|    10016858|18/10/2018|        6112,56|  20/10/2018|        100604|       P01|      33446|Best Choice Low F...|       2000|    974,69|      200644|            18/10/2019|     5583,72|                        11696,28|                0|            5583,72|     465,31|            12|      159| EA|      10016858|             R2|            1|          IBVA Shop|           G2|       2|                |816-455-8733|          1|                S5|          C|
+|          29/12/2018|    10000486|01/01/2018|         282,33|  03/01/2018|        329700|       P01|      38842|        Ebony Lemons|      11000|    192,91|      124076|            29/12/2018|       296,4|                          578,73|           160,72|             135,68|       98,8|             3|      162| EA|      10000486|             R3|            1|      Aberdeen Shop|           G2|       1|                |816-455-8733|          5|               S14|          C|
+|          02/01/2019|    10019194|02/01/2018|         319,43|  04/01/2018|        329856|       P01|      28771|       Ebony Oranges|      35000|    157,76|      124056|            02/01/2019|      311,61|                          631,04|           213,35|              98,26|    77,9025|             4|      108| SE|      10019194|             R3|            1|     Kerite Company|           G2|       1|                |816-455-8733|          5|               S14|          C|
+|          02/01/2019|    10015253|03/01/2018|         265,45|  05/01/2018|        329966|       P01|      37170|Fast BBQ Potato C...|       8000|    190,85|      124291|            02/01/2019|       307,1|                          572,55|            127,9|              179,2|102,3666667|             3|      158| EA|      10015253|             R3|            1|     Hekimian Store|           G3|       1|                |816-455-8733|          5|                S8|          C|
+|          08/01/2019|    10011345|08/01/2018|         423,69|  10/01/2018|        330315|       P01|     465052|  Club String Cheese|       5000|    960,15|      124088|            08/01/2019|      536,46|                          960,15|           300,27|             236,19|     536,46|             1|      131| EA|      10011345|             R3|            1|      Emergent Shop|           G2|       1|                |816-455-8733|          5|               S16|          C|
+|          08/01/2019|    10022962|08/01/2018|         823,28|  10/01/2018|        119676|       P01|      26651|Gorilla Mild Ched...|      10000|    352,96|      216645|            08/01/2019|      941,52|                          1764,8|           418,41|             523,11|    188,304|             5|      147| EA|      10022962|             R3|            1|       Reflex Store|           G1|       1|              M1|816-455-8733|          5|               S19|          C|
+|          08/01/2019|    10027119|08/01/2018|         227,55|  10/01/2018|        330305|          |      64798|American Roasted ...|       7000|    456,57|      124350|            08/01/2019|      229,02|                          456,57|           130,72|               98,3|     229,02|             1|      155| EA|      10027119|             R3|            1|       Yurie Market|           G2|       1|                |816-455-8733|          5|               S16|          C|
+|          09/01/2019|    10016548|09/01/2018|     21210,7536|  11/01/2018|        330442|       P01|      26502|Bravo Large Canne...|       4000|  905,8107|      122187|            09/01/2019|    22268,16|                      43478,9136|         12813,33|            9454,83|     463,92|            48|      118| EA|      10016548|             R3|            1|    Home Superstore|           G2|       2|                |816-455-8733|          2|               S16|          C|
+|          13/01/2019|    10012422|13/01/2018|         651,05|  15/01/2018|        120072|       P01|      45880|Red Spade Low Fat...|      27000|    767,75|      216976|            13/01/2019|      884,45|                          1535,5|           576,32|             308,13|    442,225|             2|      176| EA|      10012422|             R3|            1|     Finishing Shop|           G2|       2|                |816-455-8733|          2|               S16|          C|
++--------------------+------------+----------+---------------+------------+--------------+----------+-----------+--------------------+-----------+----------+------------+----------------------+------------+--------------------------------+-----------------+-------------------+-----------+--------------+---------+---+--------------+---------------+-------------+-------------------+-------------+--------+----------------+------------+-----------+------------------+-----------+
+# Juntando o restante das tabelas atrvés do Left Join para trazer todas as linhas presentes na tabela 1 (ou tabela da esquerda) com os valores correspondentes da tabela 2.
+df_relacional = df_relacional.join(df_ENDERECO,df_relacional.address_number == df_ENDERECO.address_number, "left").drop(df_ENDERECO.address_number)
+df_relacional = df_relacional.join(df_DIVISAO,df_relacional.division == df_DIVISAO.division, "left").drop(df_DIVISAO.division)
+df_relacional = df_relacional.join(df_REGIAO,df_relacional.region_code == df_REGIAO.region_code, "left").drop(df_REGIAO.region_code)
+
+# Mostrando o resultado. (Tabela Stage)
+df_relacional.show(10)
++--------------------+------------+----------+---------------+------------+--------------+----------+-----------+--------------------+-----------+----------+------------+----------------------+------------+--------------------------------+-----------------+-------------------+-----------+--------------+---------+---+--------------+---------------+-------------+-------------------+-------------+--------+----------------+------------+-----------+------------------+-----------+--------------------+-------+--------------------+--------------------+--------------------+--------------------+-----+------------+-------------+-------------+
+|actual_delivery_date|customer_key|  date_key|discount_amount|invoice_date|invoice_number|item_class|item_number|                item|line_number|list_price|order_number|promised_delivery_date|sales_amount|sales_amount_based_on_list_price|sales_cost_amount|sales_margin_amount|sales_price|sales_quantity|sales_rep|u_m|address_number|business_family|business_unit|           customer|customer_type|division|line_of_business|       phone|region_code|regional_sales_mgr|search_type|                city|country|  customer_address_1|  customer_address_2|  customer_address_3|  customer_address_4|state|    zip_code|division_name|  region_name|
++--------------------+------------+----------+---------------+------------+--------------+----------+-----------+--------------------+-----------+----------+------------+----------------------+------------+--------------------------------+-----------------+-------------------+-----------+--------------+---------+---+--------------+---------------+-------------+-------------------+-------------+--------+----------------+------------+-----------+------------------+-----------+--------------------+-------+--------------------+--------------------+--------------------+--------------------+-----+------------+-------------+-------------+
+|          27/10/2019|    10014495|26/10/2018|         915,99|  28/10/2018|        117050|       P01|      17801|Better Fancy Cann...|       1000|   1431,23|      213985|            27/10/2019|      515,24|                         1431,23|                0|             515,24|     515,24|             1|      161| EA|      10014495|             R3|            1|Harvard Supermarket|           G2|       2|                |816-455-8733|          1|               S16|          C|           Clackamas|     US| 12900 SE Capps Road|                 ...|                 ...|                 ...|   OR|       97015|     Domestic|      Western|
+|          18/10/2019|    10016858|18/10/2018|        6112,56|  20/10/2018|        100604|       P01|      33446|Best Choice Low F...|       2000|    974,69|      200644|            18/10/2019|     5583,72|                        11696,28|                0|            5583,72|     465,31|            12|      159| EA|      10016858|             R2|            1|          IBVA Shop|           G2|       2|                |816-455-8733|          1|                S5|          C|           Beaverton|     US|6590 SW Fallbrook...|(Commercial Indus...|                 ...|                 ...|   OR|       97008|     Domestic|      Western|
+|          29/12/2018|    10000486|01/01/2018|         282,33|  03/01/2018|        329700|       P01|      38842|        Ebony Lemons|      11000|    192,91|      124076|            29/12/2018|       296,4|                          578,73|           160,72|             135,68|       98,8|             3|      162| EA|      10000486|             R3|            1|      Aberdeen Shop|           G2|       1|                |816-455-8733|          5|               S14|          C|                null|   null|                null|                null|                null|                null| null|        null|International|International|
+|          02/01/2019|    10019194|02/01/2018|         319,43|  04/01/2018|        329856|       P01|      28771|       Ebony Oranges|      35000|    157,76|      124056|            02/01/2019|      311,61|                          631,04|           213,35|              98,26|    77,9025|             4|      108| SE|      10019194|             R3|            1|     Kerite Company|           G2|       1|                |816-455-8733|          5|               S14|          C|                null|   null|                null|                null|                null|                null| null|        null|International|International|
+|          02/01/2019|    10015253|03/01/2018|         265,45|  05/01/2018|        329966|       P01|      37170|Fast BBQ Potato C...|       8000|    190,85|      124291|            02/01/2019|       307,1|                          572,55|            127,9|              179,2|102,3666667|             3|      158| EA|      10015253|             R3|            1|     Hekimian Store|           G3|       1|                |816-455-8733|          5|                S8|          C|                null|   null|                null|                null|                null|                null| null|        null|International|International|
+|          08/01/2019|    10011345|08/01/2018|         423,69|  10/01/2018|        330315|       P01|     465052|  Club String Cheese|       5000|    960,15|      124088|            08/01/2019|      536,46|                          960,15|           300,27|             236,19|     536,46|             1|      131| EA|      10011345|             R3|            1|      Emergent Shop|           G2|       1|                |816-455-8733|          5|               S16|          C|                null|   null|                null|                null|                null|                null| null|        null|International|International|
+|          08/01/2019|    10022962|08/01/2018|         823,28|  10/01/2018|        119676|       P01|      26651|Gorilla Mild Ched...|      10000|    352,96|      216645|            08/01/2019|      941,52|                          1764,8|           418,41|             523,11|    188,304|             5|      147| EA|      10022962|             R3|            1|       Reflex Store|           G1|       1|              M1|816-455-8733|          5|               S19|          C|                null|   null|                null|                null|                null|                null| null|        null|International|International|
+|          08/01/2019|    10027119|08/01/2018|         227,55|  10/01/2018|        330305|          |      64798|American Roasted ...|       7000|    456,57|      124350|            08/01/2019|      229,02|                          456,57|           130,72|               98,3|     229,02|             1|      155| EA|      10027119|             R3|            1|       Yurie Market|           G2|       1|                |816-455-8733|          5|               S16|          C|                 ...|     UK|                 ...|                 ...|                 ...|                 ...|     |            |International|International|
+|          09/01/2019|    10016548|09/01/2018|     21210,7536|  11/01/2018|        330442|       P01|      26502|Bravo Large Canne...|       4000|  905,8107|      122187|            09/01/2019|    22268,16|                      43478,9136|         12813,33|            9454,83|     463,92|            48|      118| EA|      10016548|             R3|            1|    Home Superstore|           G2|       2|                |816-455-8733|          2|               S16|          C|              Mobile|     US| 4700 Rangeline Road|                 ...|                 ...|                 ...|   AL|       36619|     Domestic|     Southern|
+|          13/01/2019|    10012422|13/01/2018|         651,05|  15/01/2018|        120072|       P01|      45880|Red Spade Low Fat...|      27000|    767,75|      216976|            13/01/2019|      884,45|                          1535,5|           576,32|             308,13|    442,225|             2|      176| EA|      10012422|             R3|            1|     Finishing Shop|           G2|       2|                |816-455-8733|          2|               S16|          C|             Saginaw|     US|          PO Box 510|                 ...|                 ...|                 ...|   AL|       35137|     Domestic|     Southern|
++--------------------+------------+----------+---------------+------------+--------------+----------+-----------+--------------------+-----------+----------+------------+----------------------+------------+--------------------------------+-----------------+-------------------+-----------+--------------+---------+---+--------------+---------------+-------------+-------------------+-------------+--------+----------------+------------+-----------+------------------+-----------+--------------------+-------+--------------------+--------------------+--------------------+--------------------+-----+------------+-------------+-------------+
+
+# Importando novos comandos.
+from pyspark.sql.functions import lit
+from pyspark.sql.functions import split
+import pyspark.sql.functions as F
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import *
+
+
+# Criando as Colunas Dia, Mês e Ano para trabalhar melhor na Dim_Tempo.
+df_relacional = df_relacional.withColumn('Dia' , F.substring('invoice_date', 1,2))
+df_relacional = df_relacional.withColumn('Mes' , F.substring('invoice_date', 4,2))
+df_relacional = df_relacional.withColumn('Ano' , F.substring('invoice_date', 7,8))
+
+
+# Mostrando Resultado com as novas colunas.
++--------------------+------------+----------+---------------+------------+--------------+----------+-----------+--------------------+-----------+----------+------------+----------------------+------------+--------------------------------+-----------------+-------------------+-----------+--------------+---------+---+--------------+---------------+-------------+-------------------+-------------+--------+----------------+------------+-----------+------------------+-----------+--------------------+-------+--------------------+--------------------+--------------------+--------------------+-----+------------+-------------+-------------+---+---+----+
+|actual_delivery_date|customer_key|  date_key|discount_amount|invoice_date|invoice_number|item_class|item_number|                item|line_number|list_price|order_number|promised_delivery_date|sales_amount|sales_amount_based_on_list_price|sales_cost_amount|sales_margin_amount|sales_price|sales_quantity|sales_rep|u_m|address_number|business_family|business_unit|           customer|customer_type|division|line_of_business|       phone|region_code|regional_sales_mgr|search_type|                city|country|  customer_address_1|  customer_address_2|  customer_address_3|  customer_address_4|state|    zip_code|division_name|  region_name|Dia|Mes| Ano|
++--------------------+------------+----------+---------------+------------+--------------+----------+-----------+--------------------+-----------+----------+------------+----------------------+------------+--------------------------------+-----------------+-------------------+-----------+--------------+---------+---+--------------+---------------+-------------+-------------------+-------------+--------+----------------+------------+-----------+------------------+-----------+--------------------+-------+--------------------+--------------------+--------------------+--------------------+-----+------------+-------------+-------------+---+---+----+
+|          27/10/2019|    10014495|26/10/2018|         915,99|  28/10/2018|        117050|       P01|      17801|Better Fancy Cann...|       1000|   1431,23|      213985|            27/10/2019|      515,24|                         1431,23|                0|             515,24|     515,24|             1|      161| EA|      10014495|             R3|            1|Harvard Supermarket|           G2|       2|                |816-455-8733|          1|               S16|          C|           Clackamas|     US| 12900 SE Capps Road|                 ...|                 ...|                 ...|   OR|       97015|     Domestic|      Western| 28| 10|2018|
+|          18/10/2019|    10016858|18/10/2018|        6112,56|  20/10/2018|        100604|       P01|      33446|Best Choice Low F...|       2000|    974,69|      200644|            18/10/2019|     5583,72|                        11696,28|                0|            5583,72|     465,31|            12|      159| EA|      10016858|             R2|            1|          IBVA Shop|           G2|       2|                |816-455-8733|          1|                S5|          C|           Beaverton|     US|6590 SW Fallbrook...|(Commercial Indus...|                 ...|                 ...|   OR|       97008|     Domestic|      Western| 20| 10|2018|
+|          29/12/2018|    10000486|01/01/2018|         282,33|  03/01/2018|        329700|       P01|      38842|        Ebony Lemons|      11000|    192,91|      124076|            29/12/2018|       296,4|                          578,73|           160,72|             135,68|       98,8|             3|      162| EA|      10000486|             R3|            1|      Aberdeen Shop|           G2|       1|                |816-455-8733|          5|               S14|          C|                null|   null|                null|                null|                null|                null| null|        null|International|International| 03| 01|2018|
+|          02/01/2019|    10019194|02/01/2018|         319,43|  04/01/2018|        329856|       P01|      28771|       Ebony Oranges|      35000|    157,76|      124056|            02/01/2019|      311,61|                          631,04|           213,35|              98,26|    77,9025|             4|      108| SE|      10019194|             R3|            1|     Kerite Company|           G2|       1|                |816-455-8733|          5|               S14|          C|                null|   null|                null|                null|                null|                null| null|        null|International|International| 04| 01|2018|
+|          02/01/2019|    10015253|03/01/2018|         265,45|  05/01/2018|        329966|       P01|      37170|Fast BBQ Potato C...|       8000|    190,85|      124291|            02/01/2019|       307,1|                          572,55|            127,9|              179,2|102,3666667|             3|      158| EA|      10015253|             R3|            1|     Hekimian Store|           G3|       1|                |816-455-8733|          5|                S8|          C|                null|   null|                null|                null|                null|                null| null|        null|International|International| 05| 01|2018|
+|          08/01/2019|    10011345|08/01/2018|         423,69|  10/01/2018|        330315|       P01|     465052|  Club String Cheese|       5000|    960,15|      124088|            08/01/2019|      536,46|                          960,15|           300,27|             236,19|     536,46|             1|      131| EA|      10011345|             R3|            1|      Emergent Shop|           G2|       1|                |816-455-8733|          5|               S16|          C|                null|   null|                null|                null|                null|                null| null|        null|International|International| 10| 01|2018|
+|          08/01/2019|    10022962|08/01/2018|         823,28|  10/01/2018|        119676|       P01|      26651|Gorilla Mild Ched...|      10000|    352,96|      216645|            08/01/2019|      941,52|                          1764,8|           418,41|             523,11|    188,304|             5|      147| EA|      10022962|             R3|            1|       Reflex Store|           G1|       1|              M1|816-455-8733|          5|               S19|          C|                null|   null|                null|                null|                null|                null| null|        null|International|International| 10| 01|2018|
+|          08/01/2019|    10027119|08/01/2018|         227,55|  10/01/2018|        330305|          |      64798|American Roasted ...|       7000|    456,57|      124350|            08/01/2019|      229,02|                          456,57|           130,72|               98,3|     229,02|             1|      155| EA|      10027119|             R3|            1|       Yurie Market|           G2|       1|                |816-455-8733|          5|               S16|          C|                 ...|     UK|                 ...|                 ...|                 ...|                 ...|     |            |International|International| 10| 01|2018|
+|          09/01/2019|    10016548|09/01/2018|     21210,7536|  11/01/2018|        330442|       P01|      26502|Bravo Large Canne...|       4000|  905,8107|      122187|            09/01/2019|    22268,16|                      43478,9136|         12813,33|            9454,83|     463,92|            48|      118| EA|      10016548|             R3|            1|    Home Superstore|           G2|       2|                |816-455-8733|          2|               S16|          C|              Mobile|     US| 4700 Rangeline Road|                 ...|                 ...|                 ...|   AL|       36619|     Domestic|     Southern| 11| 01|2018|
+|          13/01/2019|    10012422|13/01/2018|         651,05|  15/01/2018|        120072|       P01|      45880|Red Spade Low Fat...|      27000|    767,75|      216976|            13/01/2019|      884,45|                          1535,5|           576,32|             308,13|    442,225|             2|      176| EA|      10012422|             R3|            1|     Finishing Shop|           G2|       2|                |816-455-8733|          2|               S16|          C|             Saginaw|     US|          PO Box 510|                 ...|                 ...|                 ...|   AL|       35137|     Domestic|     Southern| 15| 01|2018|
+|          14/01/2019|    10015495|14/01/2018|         238,31|  16/01/2018|        120147|       P01|      39680|Even Better Strin...|      90000|    263,15|      216254|            14/01/2019|      287,99|                           526,3|           203,05|              84,94|    143,995|             2|      125| EA|      10015495|             R3|            1|           Hennings|           G2|       2|              M1|816-455-8733|          4|               S16|          C|         Kansas City|     US|Attention:  Accou...|     686 South Adams|                 ...|                 ...|   KS|       66105|     Domestic|      Central| 16| 01|2018|
+|          15/01/2019|    10000481|15/01/2018|         389,88|  17/01/2018|        120327|       P01|      33445|Best Choice Corn ...|       1000|    974,69|      217557|            15/01/2019|      584,81|                          974,69|           353,52|             231,29|     584,81|             1|      184| EA|      10000481|             R2|            1|        Abbott Shop|           G2|       2|                |816-455-8733|          4|                S5|          C|             Chicago|     US|            Box 5516|                 ...|                 ...|                 ...|   IL|       60680|     Domestic|      Central| 17| 01|2018|
+|          16/01/2019|    10026868|16/01/2018|         266,77|  18/01/2018|        120356|       P01|      11391|High Top Cauliflower|      19000|     63,54|      216654|            16/01/2019|      305,09|                          571,86|           170,57|             134,52|33,89888889|             9|      131| EA|      10026868|             R3|            1|       Xyratex Shop|           G1|       1|              M1|816-455-8733|          5|               S16|          C|            Valencia|     UK|Aut Reg Del Centr...|A Pto Cabello Dis...|    Centro Comercial|          IL Portico|     |            |International|International| 18| 01|2018|
+|          19/01/2019|    10025022|20/01/2018|         394,29|  22/01/2018|        120634|       P01|      37171|     Fast Corn Chips|      31000|    169,04|      216929|            19/01/2019|      450,91|                           845,2|           320,81|              130,1|     90,182|             5|      170| EA|      10025022|             R3|            1|   Take Supermarket|           G1|       1|              M1|816-455-8733|          5|               S19|          C|       West Midlands|     UK|Bromley St Lye St...|                 ...|                 ...|                 ...|     |     DY9 8HS|International|International| 22| 01|2018|
+|          21/01/2019|    10016588|21/01/2018|          647,5|  23/01/2018|        120790|       P01|      28396|   Ebony New Potatos|      39000|      14,3|      217528|            21/01/2019|       782,5|                            1430|              329|              453,5|      7,825|           100|      104| EA|      10016588|             R3|            1|   Bounds Megaplace|           G2|       2|              M1|816-455-8733|          2|               S16|          C|             Schertz|     US|6025 Corridor Par...|                 ...|                 ...|                 ...|   TX|  78154-3214|     Domestic|     Southern| 23| 01|2018|
+|          23/01/2019|    10015793|23/01/2018|         875,21|  25/01/2018|        121042|       P01|      28401|Ebony Prepared Salad|       9000|    966,44|      217905|            23/01/2019|     1057,67|                         1932,88|           556,76|             500,91|    528,835|             2|      173| EA|      10015793|             R3|            1|Hetrick Supermarket|           G2|       2|                |816-455-8733|          1|               S16|          C|          Sacramento|     US|3248 Auburn Boule...|                 ...|                 ...|                 ...|   CA|       95821|     Domestic|      Western| 25| 01|2018|
+|          22/01/2018|    10025158|22/01/2017|         272,46|  25/01/2017|        319948|       P01|      38845|       Ebony Peaches|      11001|    191,33|      116576|            22/01/2018|      301,53|                          573,99|           164,11|             137,42|     100,51|             3|      125| EA|      10025158|             R3|            1|Taskers Supermarket|           G1|       1|              M1|816-455-8733|          5|               S19|          C|                null|   null|                null|                null|                null|                null| null|        null|International|International| 25| 01|2017|
+|          23/01/2019|    10025919|23/01/2018|         421,86|  25/01/2018|        121088|       P01|      61856|   Moms Potato Salad|      40000|    232,92|      218048|            23/01/2019|      509,82|                          931,68|              287|             222,82|    127,455|             4|      108| EA|      10025919|             R3|            1|           Vanstars|           G2|       2|              M1|816-455-8733|          1|               S16|          C|             Compton|     US|801 West Artesia ...|                 ...|                 ...|                 ...|   CA|       90220|     Domestic|      Western| 25| 01|2018|
+|          26/01/2019|    10000466|27/01/2018|          457,4|  29/01/2018|        121230|       P01|      30279|Even Better Sharp...|       1000|   1078,77|      218179|            26/01/2019|      621,37|                         1078,77|           449,98|             171,39|     621,37|             1|      161| EA|      10000466|             R3|            1|          A2Z Store|           G2|       2|                |816-455-8733|          1|               S16|          C|     North Highlands|     US|3213 Orange Grove...|                 ...|                 ...|                 ...|   CA|       95660|     Domestic|      Western| 29| 01|2018|
+|          26/01/2019|    10007134|27/01/2018|        215,538|  29/01/2018|        121216|       P01|      28881|Nationeel Corn Chips|       1000|   48,8438|      218087|            26/01/2019|       272,9|                         488,438|           103,64|             169,26|      27,29|            10|      182| EA|      10007134|             R3|            1|           C&C Shop|           G2|       1|              M1|816-455-8733|          5|                S1|          C|                null|   null|                null|                null|                null|                null| null|        null|International|International| 29| 01|2018|
++--------------------+------------+----------+---------------+------------+--------------+----------+-----------+--------------------+-----------+----------+------------+----------------------+------------+--------------------------------+-----------------+-------------------+-----------+--------------+---------+---+--------------+---------------+-------------+-------------------+-------------+--------+----------------+------------+-----------+------------------+-----------+--------------------+-------+--------------------+--------------------+--------------------+--------------------+-----+------------+-------------+-------------+---+---+----+
+
+# Tratando os dados para não haver vazios, nullos e em brancos.
+df_relacional = df_relacional.withColumn("line_of_business", when((df_relacional["line_of_business"] == "") | 
+                                                      (df_relacional["line_of_business"] == "   ") | 
+                                                      (df_relacional["line_of_business"].isNull()), 
+                                                      "Não informado").otherwise(df_relacional["line_of_business"]))
+
+df_relacional = df_relacional.withColumn("item_class", when((df_relacional["item_class"] == "") | 
+                                                      (df_relacional["item_class"] == "                                       ") | 
+                                                      (df_relacional["item_class"].isNull()), 
+                                                      0).otherwise(df_relacional["item_class"]))
+
+df_relacional = df_relacional.withColumn("customer_address_1", when((df_relacional["customer_address_1"] == "") | 
+                                                      (df_relacional["customer_address_1"] == "                                        ") | 
+                                                      (df_relacional["customer_address_1"].isNull()), 
+                                                      "Não informado").otherwise(df_relacional["customer_address_1"]))
+
+df_relacional = df_relacional.withColumn("customer_address_2", when((df_relacional["customer_address_2"] == "") | 
+                                                      (df_relacional["customer_address_2"] == "                                        ") | 
+                                                      (df_relacional["customer_address_2"].isNull()), 
+                                                      "Não informado").otherwise(df_relacional["customer_address_2"]))
+
+df_relacional = df_relacional.withColumn("customer_address_3", when((df_relacional["customer_address_3"] == "") | 
+                                                      (df_relacional["customer_address_3"] == "                                        ") | 
+                                                      (df_relacional["customer_address_3"].isNull()), 
+                                                      "Não informado").otherwise(df_relacional["customer_address_3"]))
+
+df_relacional = df_relacional.withColumn("customer_address_4", when((df_relacional["customer_address_4"] == "") | 
+                                                      (df_relacional["customer_address_4"] == "                                        ") | 
+                                                      (df_relacional["customer_address_4"].isNull()), 
+                                                      "Não informado").otherwise(df_relacional["customer_address_4"]))
+
+df_relacional = df_relacional.withColumn("city", when((df_relacional["city"] == "") | 
+                                                      (df_relacional["city"] == "                         ") | 
+                                                      (df_relacional["city"].isNull()), 
+                                                      "Não informado").otherwise(df_relacional["city"]))
+
+
+df_relacional = df_relacional.withColumn("discount_amount", when((df_relacional["discount_amount"] == "") | 
+                                                      (df_relacional["discount_amount"] == "                                    ") | 
+                                                      (df_relacional["discount_amount"].isNull()), 
+                                                      0).otherwise(df_relacional["discount_amount"]))
+
+df_relacional = df_relacional.withColumn("item_number", when((df_relacional["item_number"] == "") | 
+                                                      (df_relacional["item_number"] == "                                        ") | 
+                                                      (df_relacional["item_number"].isNull()), 
+                                                      0).otherwise(df_relacional["item_number"]))
+
+                                                      
+df_relacional = df_relacional.withColumn("sales_price", when((df_relacional["sales_price"] == "") | 
+                                                      (df_relacional["sales_price"] == "                                          ") | 
+                                                      (df_relacional["sales_price"].isNull()), 
+                                                      0).otherwise(df_relacional["sales_price"]))
+
+df_relacional = df_relacional.withColumn("country", when((df_relacional["country"] == "") | 
+                                                      (df_relacional["country"] == "                                               ") | 
+                                                      (df_relacional["country"].isNull()), 
+                                                      "Não informado").otherwise(df_relacional["country"]))
+
+df_relacional = df_relacional.withColumn("state", when((df_relacional["state"] == "") | 
+                                                      (df_relacional["state"] == "                                                 ") | 
+                                                      (df_relacional["state"].isNull()), 
+                                                      "Não informado").otherwise(df_relacional["state"]))
+
+df_relacional = df_relacional.withColumn("zip_code", when((df_relacional["zip_code"] == "") | 
+                                                      (df_relacional["zip_code"] == "            ") | 
+                                                      (df_relacional["zip_code"].isNull()), 
+                                                      0).otherwise(df_relacional["zip_code"]))
+
+
+# Mudando a coluna sales_amount para váriavel Double e modificando a "," por "."
+df_relacional = df_relacional.withColumn('sales_amount', regexp_replace('sales_amount', ',', '.').cast('double'))
+df_relacional = df_relacional.withColumn("sales_amount", col("sales_amount").cast("double"))
+
 
 # Espaço para tratar e juntar os campos e a criação do modelo dimensional
 +--------------------+------------+----------+---------------+------------+--------------+----------+-----------+--------------------+-----------+----------+------------+----------------------+------------+--------------------------------+-----------------+-------------------+-----------+--------------+---------+---+--------------+---------------+-------------+-------------------+-------------+--------+----------------+------------+-----------+------------------+-----------+---------------+-------------+--------------------+--------------------+------------------+------------------+-------------+----------+-------------+-------------+---+-----+----+
@@ -40,8 +225,10 @@ df_clientes = spark.sql("SELECT * FROM DESAFIO_CURSO.TBL_CLIENTES")
 |          26/01/2019|    10007134|27/01/2018|        215,538|  29/01/2018|        121216|       P01|      28881|Nationeel Corn Chips|       1000|   48,8438|      218087|            26/01/2019|       272.9|                         488,438|           103,64|             169,26|      27,29|            10|      182| EA|      10007134|             R3|            1|           C&C Shop|           G2|       1|              M1|816-455-8733|          5|                S1|          C|  Não informado|Não informado|       Não informado|       Não informado|     Não informado|     Não informado|Não informado|         0|International|International| 29|   01|2018|
 +--------------------+------------+----------+---------------+------------+--------------+----------+-----------+--------------------+-----------+----------+------------+----------------------+------------+--------------------------------+-----------------+-------------------+-----------+--------------+---------+---+--------------+---------------+-------------+-------------------+-------------+--------+----------------+------------+-----------+------------------+-----------+---------------+-------------+--------------------+--------------------+------------------+------------------+-------------+----------+-------------+-------------+---+-----+----+
 
-
+# Selecionando as colunas para fazer a PK_CLIENTES e logo abaixo o resultado 
 pk_clientes, (customer_key, address_number, customer)
+# Criando as minhas PKs.
+df_relacional = df_relacional.withColumn("PK_CLIENTES", sha2(concat_ws("", df_relacional.address_number, df_relacional.customer, df_relacional.customer_key), 256))
 +--------------------+------------+----------+---------------+------------+--------------+----------+-----------+--------------------+-----------+----------+------------+----------------------+------------+--------------------------------+-----------------+-------------------+-----------+--------------+---------+---+--------------+---------------+-------------+-------------------+-------------+--------+----------------+------------+-----------+------------------+-----------+-------------+-------------+--------------------+--------------------+------------------+------------------+-------------+--------+-------------+-------------+---+-----+----+--------------------+
 |actual_delivery_date|customer_key|  date_key|discount_amount|invoice_date|invoice_number|item_class|item_number|                item|line_number|list_price|order_number|promised_delivery_date|sales_amount|sales_amount_based_on_list_price|sales_cost_amount|sales_margin_amount|sales_price|sales_quantity|sales_rep|u_m|address_number|business_family|business_unit|           customer|customer_type|division|line_of_business|       phone|region_code|regional_sales_mgr|search_type|         city|      country|  customer_address_1|  customer_address_2|customer_address_3|customer_address_4|        state|zip_code|division_name|  region_name|Day|Month|Year|          PK_CLIENTE|
 +--------------------+------------+----------+---------------+------------+--------------+----------+-----------+--------------------+-----------+----------+------------+----------------------+------------+--------------------------------+-----------------+-------------------+-----------+--------------+---------+---+--------------+---------------+-------------+-------------------+-------------+--------+----------------+------------+-----------+------------------+-----------+-------------+-------------+--------------------+--------------------+------------------+------------------+-------------+--------+-------------+-------------+---+-----+----+--------------------+
@@ -52,6 +239,7 @@ pk_clientes, (customer_key, address_number, customer)
 |          02/01/2019|    10015253|03/01/2018|         265,45|  05/01/2018|        329966|       P01|      37170|Fast BBQ Potato C...|       8000|    190,85|      124291|            02/01/2019|       307.1|                          572,55|            127,9|              179,2|102,3666667|             3|      158| EA|      10015253|             R3|            1|     Hekimian Store|           G3|       1|   Não informado|816-455-8733|          5|                S8|          C|Não informado|Não informado|       Não informado|       Não informado|     Não informado|     Não informado|Não informado|       0|International|International| 05|   01|2018|3f8158bbf9f6e73a0...|
 +--------------------+------------+----------+---------------+------------+--------------+----------+-----------+--------------------+-----------+----------+------------+----------------------+------------+--------------------------------+-----------------+-------------------+-----------+--------------+---------+---+--------------+---------------+-------------+-------------------+-------------+--------+----------------+------------+-----------+------------------+-----------+-------------+-------------+--------------------+--------------------+------------------+------------------+-------------+--------+-------------+-------------+---+-----+----+--------------------+
 
+df_relacional = df_relacional.withColumn("PK_TEMPO", sha2(concat_ws("", df_relacional.invoice_date,df_relacional.Dia,df_relacional.Mes, df_relacional.Ano ), 256))
 pk_tempo, (invoice_date, Dia, Mes, Ano)
 
 +--------------------+------------+----------+---------------+------------+--------------+----------+-----------+--------------------+-----------+----------+------------+----------------------+------------+--------------------------------+-----------------+-------------------+-----------+--------------+---------+---+--------------+---------------+-------------+-------------------+-------------+--------+----------------+------------+-----------+------------------+-----------+-------------+-------------+--------------------+--------------------+------------------+------------------+-------------+--------+-------------+-------------+---+-----+----+--------------------+--------------------+
@@ -64,6 +252,7 @@ pk_tempo, (invoice_date, Dia, Mes, Ano)
 |          02/01/2019|    10015253|03/01/2018|         265,45|  05/01/2018|        329966|       P01|      37170|Fast BBQ Potato C...|       8000|    190,85|      124291|            02/01/2019|       307.1|                          572,55|            127,9|              179,2|102,3666667|             3|      158| EA|      10015253|             R3|            1|     Hekimian Store|           G3|       1|   Não informado|816-455-8733|          5|                S8|          C|Não informado|Não informado|       Não informado|       Não informado|     Não informado|     Não informado|Não informado|       0|International|International| 05|   01|2018|3f8158bbf9f6e73a0...|8f6de1ca57b55f4b9...|
 +--------------------+------------+----------+---------------+------------+--------------+----------+-----------+--------------------+-----------+----------+------------+----------------------+------------+--------------------------------+-----------------+-------------------+-----------+--------------+---------+---+--------------+---------------+-------------+-------------------+-------------+--------+----------------+------------+-----------+------------------+-----------+-------------+-------------+--------------------+--------------------+------------------+------------------+-------------+--------+-------------+-------------+---+-----+----+--------------------+--------------------+
 
+df_relacional = df_relacional.withColumn("PK_LOCALIDADE", sha2(concat_ws("", df_relacional.region_name,df_relacional.region_code,df_relacional.city, df_relacional.country, df_relacional.state,df_relacional.zip_code,), 256))
 pk_localidade, (region_name, region_code, city, country, state, zip_code)
 
 +--------------------+------------+----------+---------------+------------+--------------+----------+-----------+--------------------+-----------+----------+------------+----------------------+------------+--------------------------------+-----------------+-------------------+-----------+--------------+---------+---+--------------+---------------+-------------+-------------------+-------------+--------+----------------+------------+-----------+------------------+-----------+-------------+-------------+--------------------+--------------------+------------------+------------------+-------------+--------+-------------+-------------+---+-----+----+--------------------+--------------------+--------------------+
@@ -77,27 +266,94 @@ pk_localidade, (region_name, region_code, city, country, state, zip_code)
 +--------------------+------------+----------+---------------+------------+--------------+----------+-----------+--------------------+-----------+----------+------------+----------------------+------------+--------------------------------+-----------------+-------------------+-----------+--------------+---------+---+--------------+---------------+-------------+-------------------+-------------+--------+----------------+------------+-----------+------------------+-----------+-------------+-------------+--------------------+--------------------+------------------+------------------+-------------+--------+-------------+-------------+---+-----+----+--------------------+--------------------+--------------------+
 
 
+# Criando a minha FT_VENDAS usando parâmetro para pegar a soma da quantidade de venda.
+FT_VENDAS = df_relacional.select("PK_CLIENTES", "PK_LOCALIDADE", "PK_TEMPO", "sales_amount", "sales_quantity",) \
+                  .groupBy("PK_CLIENTES", "PK_LOCALIDADE", "PK_TEMPO") \
+                  .agg(round(sum(col("sales_amount")), 2).alias("sales_amount"), sum(col("sales_quantity")).alias("sales_quantity"))
+# Mostrando a FT_VENDAS.
+FT_VENDAS.show(5)
++--------------------+--------------------+--------------------+------------+--------------+
+|         PK_CLIENTES|       PK_LOCALIDADE|            PK_TEMPO|sales_amount|sales_quantity|
++--------------------+--------------------+--------------------+------------+--------------+
+|6ad6fbeb4ac634696...|b5750d6ebc7ee9181...|78b36fdca5e4bdca4...|    10087.12|          33.0|
+|5deffcaedfcb30e37...|b4bd83bea8c7d7956...|70d9a25a3ffc196d2...|    15833.49|          88.0|
+|5ce2a4c413dd05e70...|37718df49262d44ac...|49e8aba1e3c8da025...|      979.06|           4.0|
+|6e3d6c3b97414cbb0...|b4bd83bea8c7d7956...|1df26c6dbbff4328a...|      354.88|           3.0|
+|9c07fac7c2844013b...|ad7b6dfb468724372...|5aa2f808a7e824968...|    30320.79|         155.0|
++--------------------+--------------------+--------------------+------------+--------------+
+# Usando parâmetro para converter o Ponto para Vírgula.
+FT_VENDAS = FT_VENDAS.withColumn("sales_amount", regexp_replace("sales_amount", "\\.", ","))
+# Salvando a minha tabela.
+salvar_df(FT_VENDAS, "FT_VENDAS")
+
+
+# Criando a DIM_CLIENTES usando as colunas necessárias e excluindo as informações duplicadas.
+DIM_CLIENTES = df_relacional.select(col("PK_CLIENTES"), col("customer_key"), col("address_number"), col("customer")).dropDuplicates()
+# Mostrando a DIM_CLIENTES.
+DIM_CLIENTES.show(5)
++--------------------+------------+--------------+----------------+
+|         PK_CLIENTES|customer_key|address_number|        customer|
++--------------------+------------+--------------+----------------+
+|1bb5aa8a7eb147ef9...|    10006862|      10006862|  BL Supermarket|
+|669d105c92d8f813c...|    10018146|      10018146|J.M. Supermarket|
+|d044938165e666e13...|    10022168|      10022168|  QualServe Shop|
+|40b7f450d049a21d9...|    10016113|      10016113|Hill Supermarket|
+|3ba7060a5574ea48a...|    10009669|      10009669|        De Store|
++--------------------+------------+--------------+----------------+
+# Salvando DIM_CLIENTES.
+salvar_df(DIM_CLIENTES, "DIM_CLIENTES")
+
+# Fazendo a minha DIM_TEMPO excluindo as informações duplicadas.
+DIM_TEMPO = df_relacional.select(col("PK_TEMPO"), col("invoice_date"), col("Ano"), col("Mes"), col("Dia")).dropDuplicates()
+# Mostrando a DIM_TEMPO.
+DIM_TEMPO.show(5)
++--------------------+------------+----+---+---+
+|            PK_TEMPO|invoice_date| Ano|Mes|Dia|
++--------------------+------------+----+---+---+
+|a152057eafbf65def...|  13/05/2017|2017| 05| 13|
+|fdc337618c8cf5ba2...|  12/02/2019|2019| 02| 12|
+|72d401c3b19dd2328...|  25/06/2017|2017| 06| 25|
+|3e2ecf33358c49903...|  04/08/2017|2017| 08| 04|
+|78b36fdca5e4bdca4...|  09/12/2017|2017| 12| 09|
++--------------------+------------+----+---+---+
+# Salvando a minha DIM_TEMPO.
+salvar_df(DIM_TEMPO, "DIM_TEMPO")
+
+# Fazendo a DIM_LOCALIDADE e exlcuindo as informações duplicadas.
+DIM_LOCALIDADE = df_relacional.select(col("PK_LOCALIDADE"), col("region_name"), col("region_code"), col("city"), col("country"), col("state"), col("zip_code")).dropDuplicates()
+# Mostrando DIM_LOCALIDADE.
+DIM_LOCALIDADE.show(5)
++--------------------+-----------+-----------+---------------+-------+-----+--------+
+|       PK_LOCALIDADE|region_name|region_code|           city|country|state|zip_code|
++--------------------+-----------+-----------+---------------+-------+-----+--------+
+|138aefa9c9e11d89c...|    Central|          4|      Hazelwood|     US|   MO|   63042|
+|ef81351d7b6abaf65...|    Central|          4|          Wayne|     US|   MI|   48184|
+|98a0d6abc9144ec22...|    Western|          1|         Tigard|     US|   OR|   97223|
+|d1e5e68611e518eae...|     Canada|          0|  Prince George|     CA|   BC| V2N 1V6|
+|20edfd66f1d811aa1...|    Western|          1|North Highlands|     US|   CA|   95660|
++--------------------+-----------+-----------+---------------+-------+-----+--------+
+# Salvando a DIM_LOCALIDADE.
+salvar_df(DIM_LOCALIDADE, "DIM_LOCALIDADE")
+
+
+# Descobrindo a região que mais vendeu.
+vendas_regiao = df_relacional.filter(col("region_name") == "International")
+soma_vendas_international = vendas_regiao.agg(sum("sales_amount")).collect() [0][0]
+print (soma_vendas_international)
+80053272.50999999
+
+# Descobrindo o valor total de vendas.
+soma_sales_amount = df_relacional.select(sum(df_relacional["sales_amount"])).collect()[0][0]
+print("A soma dos valores na coluna sales_amount é:", soma_sales_amount)
+A soma dos valores na coluna sales_amount é: 187684405.61999983
 
 
 
-
-
-# criando o fato
-FT_VENDAS = []
-
-
-#criando as dimensões
-DIM_CLIENTES = []
-DIM_TEMPO = []
-DIM_LOCALIDADE = []
-
-
-
-# função para salvar os dados
+# Parâmetro para salvar as minhas tabelas no Hive e mandar para as pastas corretas.
 def salvar_df(df, file):
-    output = "/input/desafio_hive/gold/" + file
+    output = "/input/gold/" + file
     erase = "hdfs dfs -rm " + output + "/*"
-    rename = "hdfs dfs -get /datalake/gold/"+file+"/part-* /input/desafio_hive/gold/"+file+".csv"
+    rename = "hdfs dfs -get /datalake/gold/"+file+"/part-* /input/gold/"+file+".csv"
     print(rename)
     
     
@@ -110,5 +366,3 @@ def salvar_df(df, file):
 
     os.system(erase)
     os.system(rename)
-
-salvar_df(dim_clientes, 'dimclientes')
